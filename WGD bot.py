@@ -514,6 +514,14 @@ def create_trades_df(analyzed_trades):
         (x['exit_price'] - x['entry']) if x['direction'] == 'bullish' 
         else (x['entry'] - x['exit_price']), axis=1)
     
+    # Format specified numeric values in comma separated money format with 2 decimal places
+    money_columns = ['balance_before', 'risk_amount', 'profit', 'balance_after', 
+                     'withdrawal', 'total_withdrawn', 'investment', 
+                     'total_invested', 'total_equity']  # Columns to format
+    for col in money_columns:
+        if col in df.columns:  # Check if the column exists in the DataFrame
+            df[col] = df[col].apply(lambda x: f"${'{:,.2f}'.format(x)}")
+    
     return df
 
 
