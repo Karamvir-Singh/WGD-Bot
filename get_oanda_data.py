@@ -194,10 +194,10 @@ def get_oanda_data(instrument: str, granularity: str, days: str) -> pd.DataFrame
 
     # Rename columns
     df_bid = df_bid.rename(columns={
-        'Close': 'Close_sell',
-        'High': 'High_sell', 
-        'Low': 'Low_sell',
-        'Open': 'Open_sell',
+        'Close': 'Close_bid',
+        'High': 'High_bid', 
+        'Low': 'Low_bid',
+        'Open': 'Open_bid',
     })
 
     df_mid = df_mid.rename(columns={
@@ -208,24 +208,24 @@ def get_oanda_data(instrument: str, granularity: str, days: str) -> pd.DataFrame
     })
 
     df_ask = df_ask.rename(columns={
-        'Close': 'Close_buy',
-        'High': 'High_buy',
-        'Low': 'Low_buy',
-        'Open': 'Open_buy',
+        'Close': 'Close_ask',
+        'High': 'High_ask',
+        'Low': 'Low_ask',
+        'Open': 'Open_ask',
     })
 
     # Combine DataFrames
     df = pd.concat([
-        df_bid[['Close_sell', 'High_sell', 'Low_sell', 'Open_sell']],
+        df_bid[['Close_bid', 'High_bid', 'Low_bid', 'Open_bid']],
         df_mid[['Close', 'High', 'Low', 'Open']],
-        df_ask[['Close_buy', 'High_buy', 'Low_buy', 'Open_buy', 'Volume']],
+        df_ask[['Close_ask', 'High_ask', 'Low_ask', 'Open_ask', 'Volume']],
     ], axis=1)
 
     # Add spread columns
-    df['Close_spread'] = round(df['Close_buy'] - df['Close_sell'], 1)
-    df['Open_spread'] = round(df['Open_buy'] - df['Open_sell'], 1)
-    df['High_spread'] = round(df['High_buy'] - df['High_sell'], 1)
-    df['Low_spread'] = round(df['Low_buy'] - df['Low_sell'], 1)
+    df['Close_spread'] = round(df['Close_ask'] - df['Close_bid'], 1)
+    df['Open_spread'] = round(df['Open_ask'] - df['Open_bid'], 1)
+    df['High_spread'] = round(df['High_ask'] - df['High_bid'], 1)
+    df['Low_spread'] = round(df['Low_ask'] - df['Low_bid'], 1)
 
     return df
     

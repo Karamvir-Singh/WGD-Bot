@@ -1,4 +1,4 @@
-Datetime,Close_sell,High_sell,Low_sell,Open_sell,Close,High,Low,Open,Close_buy,High_buy,Low_buy,Open_buy,Volume,Close_spread,Open_spread,High_spread,Low_spread
+Datetime,Close_bid,High_bid,Low_bid,Open_bid,Close,High,Low,Open,Close_ask,High_ask,Low_ask,Open_ask,Volume,Close_spread,Open_spread,High_spread,Low_spread
 2025-03-09 22:00:00+00:00,5722.7,5740.7,5720.2,5731.7,5723.0,5741.0,5720.6,5732.3,5723.2,5741.2,5720.9,5732.9,1586,0.5,1.2,0.5,0.7
 2025-03-09 22:15:00+00:00,5726.9,5732.2,5716.7,5722.4,5727.2,5732.6,5717.0,5722.6,5727.4,5732.9,5717.2,5722.9,1232,0.5,0.5,0.7,0.5
 2025-03-09 22:30:00+00:00,5731.7,5734.7,5724.4,5727.0,5732.0,5735.0,5724.6,5727.4,5732.2,5735.2,5724.9,5727.7,819,0.5,0.7,0.5,0.5
