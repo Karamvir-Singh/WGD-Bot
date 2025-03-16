@@ -8,15 +8,15 @@ from charting import create_chart, create_chart_with_fvgs_and_ggs, create_chart_
 from helper import print_fvg_details
 import argparse
 
-from trade_finder import get_data, find_fvg_intersections, find_gg_reversal_pattern_trades
+from trade_finder import get_yf_data_and_fvgs, detect_fvg, find_fvg_intersections, find_gg_reversal_pattern_trades
+from get_oanda_data import get_oanda_data
 
 
 
 
 
 
-
-def calculate_trailing_sl(entry, sl, current_price, direction, strategy='r_based', high=None, low=None, rr_jumpstep=1.5):
+def calculate_trailing_sl(entry, sl, current_price, direction, strategy='r_based', high=None, low=None, rr_jumpstep=1):
     """
     Calculate the trailing stop loss level based on price movement.
     
@@ -148,20 +148,35 @@ def analyze_trade_exits(trades, df, rr=None, stacking=1, use_trailing_sl=False, 
         for idx, row in future_data.iterrows():
             high, low = row['High'], row['Low']
             close = row['Close']
-            
+            open = row['Open']
+
+            if close >= open:
+                candle_color = 'green'
+            else:
+                candle_color = 'red'
+
             # Get previous bar's data
             prev_idx = df.index.get_loc(idx) - 1
             if prev_idx >= 0:
                 prev_high = df.iloc[prev_idx]['High']
                 prev_low = df.iloc[prev_idx]['Low']
+                prev_close = df.iloc[prev_idx]['Close']
+                prev_open = df.iloc[prev_idx]['Open']
             else:
                 prev_high = high
                 prev_low = low
+                prev_close = close
+                prev_open = open
             
+            if prev_close >= prev_open:
+                prev_candle_color = 'green'
+            else:
+                prev_candle_color = 'red'
+
             # Check for TP hit first if respect_tp_when_sl_trailing is True or trailing SL is not used
             if respect_tp_when_sl_trailing or not use_trailing_sl:
-                tp_hit = (direction == 'bullish' and high >= tp) or \
-                        (direction == 'bearish' and low <= tp)
+                tp_hit = (direction == 'bullish' and candle_color == 'green' and high >= tp) or \
+                        (direction == 'bearish' and candle_color == 'red' and low <= tp)
                 
                 if tp_hit:
                     exit_price = tp
@@ -173,9 +188,9 @@ def analyze_trade_exits(trades, df, rr=None, stacking=1, use_trailing_sl=False, 
             
             # Update trailing stop loss using previous bar's high/low
             if use_trailing_sl:
-                if direction == 'bullish':
+                if direction == 'bullish' and prev_candle_color == 'green' and prev_high > current_sl:
                     new_sl = calculate_trailing_sl(
-                        entry, current_sl, prev_high, direction,
+                        entry, current_sl, prev_close, direction,
                         strategy=trailing_sl_strategy,
                         high=prev_high, low=prev_low
                     )
@@ -185,9 +200,9 @@ def analyze_trade_exits(trades, df, rr=None, stacking=1, use_trailing_sl=False, 
                         sl_has_trailed = True
                         current_rr = (new_sl - entry) / risk
                         trail_sl_history.append((current_rr, idx, new_sl))
-                else:  # bearish
+                elif direction == 'bearish' and prev_candle_color == 'red' and prev_low < current_sl:
                     new_sl = calculate_trailing_sl(
-                        entry, current_sl, prev_low, direction,
+                        entry, current_sl, prev_close, direction,
                         strategy=trailing_sl_strategy,
                         high=prev_high, low=prev_low
                     )
@@ -314,6 +329,19 @@ def analyze_trade_metrics(trades, account_type='steady', initial_balance=1000, m
             
         # Calculate profit based on risk amount and trade RR
         exit_rr = trade.get('exit_rr', 0)
+
+        # Get entry and stop loss prices and round to 1 decimal
+        entry = round(float(trade['entry']), 1)
+        sl = round(float(trade['sl']), 1)
+        
+        # Calculate risky ticks
+        risky_ticks = abs(entry - sl)
+        trade['risky_ticks'] = risky_ticks
+
+        # TODO: Add code for calculating possible max risk amount per tick
+        # based on total balance, margin%, current trading price, and risky_ticks
+        # and then use that to calculate max risk amount per trade
+
         profit = risk_amount * exit_rr
         trade['profit'] = profit
         
@@ -378,6 +406,7 @@ def calculate_account_metrics(analyzed_trades):
         'largest_loss': 0,
         'final_balance': 0,
         'max_equity': 0,
+        'total_equity': 0,
         'total_withdrawal': 0,
         'max_withdrawal': 0,
         'total_investment': 0,
@@ -411,6 +440,7 @@ def calculate_account_metrics(analyzed_trades):
             if 'balance_after' in trade:
                 metrics['final_balance'] = trade['balance_after']
                 metrics['max_equity'] = max(metrics['max_equity'], trade['total_equity'])
+                metrics['total_equity'] = trade['total_equity']
             
             # Track withdrawals and investments
             if 'withdrawal' in trade:
@@ -582,9 +612,16 @@ def analyze_trading_results(trades, df, account_type='steady', initial_balance=1
 
 def main():
     # Set up parameters
-    symbol = "^GSPC"
+    # yf_symbol = "^GSPC"
+    symbol = "SPX500_USD"
+    # symbol = "US30_USD"
+
+    HTF = "M15"
+    LTF = "M1"
+    days = 7
+
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=59)  # Reduced to 7 days due to 5min data limitations
+    start_date = end_date - timedelta(days=days)  # Reduced to 7 days due to 5min data limitations
     
     # Add argument parsing for risk/reward ratio and chart display
     parser = argparse.ArgumentParser()
@@ -596,37 +633,69 @@ def main():
     
     print(f"Fetching data for {symbol} from {start_date} to {end_date}")
     
-    # Get data
-    df_1h, df_5m, fvgs_1h, fvgs_5m = get_data(symbol, start_date, end_date)
+
+
+
+    # Get YF data
+    # df_1h, df_5m, fvgs_1h, fvgs_5m = get_yf_data_and_fvgs(yf_symbol, start_date, end_date)
+
+
+    oanda_df_htf = get_oanda_data(symbol, HTF, str(days))
+    oanda_df_ltf = get_oanda_data(symbol, LTF, str(days))
+
+    oanda_fvgs_htf = detect_fvg(oanda_df_htf, HTF)
+    oanda_fvgs_ltf = detect_fvg(oanda_df_ltf, LTF)
+
     
     # Print information about the FVGs
-    print(f"\n1h Bullish FVGs: {len(fvgs_1h[0])}, Active: {sum(1 for fvg in fvgs_1h[0] if fvg['active'])}")
-    print(f"1h Bearish FVGs: {len(fvgs_1h[1])}, Active: {sum(1 for fvg in fvgs_1h[1] if fvg['active'])}")
-    print(f"5m Bullish FVGs: {len(fvgs_5m[0])}, Active: {sum(1 for fvg in fvgs_5m[0] if fvg['active'])}")
-    print(f"5m Bearish FVGs: {len(fvgs_5m[1])}, Active: {sum(1 for fvg in fvgs_5m[1] if fvg['active'])}")
+    # print(f"\n1h Bullish FVGs: {len(fvgs_1h[0])}, Active: {sum(1 for fvg in fvgs_1h[0] if fvg['active'])}")
+    # print(f"1h Bearish FVGs: {len(fvgs_1h[1])}, Active: {sum(1 for fvg in fvgs_1h[1] if fvg['active'])}")
+    # print(f"5m Bullish FVGs: {len(fvgs_5m[0])}, Active: {sum(1 for fvg in fvgs_5m[0] if fvg['active'])}")
+    # print(f"5m Bearish FVGs: {len(fvgs_5m[1])}, Active: {sum(1 for fvg in fvgs_5m[1] if fvg['active'])}")
     
+    print(f"\n{HTF} Bullish FVGs: {len(oanda_fvgs_htf[0])}, Active: {sum(1 for fvg in oanda_fvgs_htf[0] if fvg['active'])}")
+    print(f"{HTF} Bearish FVGs: {len(oanda_fvgs_htf[1])}, Active: {sum(1 for fvg in oanda_fvgs_htf[1] if fvg['active'])}")
+    print(f"{LTF} Bullish FVGs: {len(oanda_fvgs_ltf[0])}, Active: {sum(1 for fvg in oanda_fvgs_ltf[0] if fvg['active'])}")
+    print(f"{LTF} Bearish FVGs: {len(oanda_fvgs_ltf[1])}, Active: {sum(1 for fvg in oanda_fvgs_ltf[1] if fvg['active'])}")
     
-    bullish_ggs, bearish_ggs = find_fvg_intersections(fvgs_1h, fvgs_5m)
+    oanda_bullish_ggs, oanda_bearish_ggs = find_fvg_intersections(oanda_fvgs_htf, oanda_fvgs_ltf)
 
     # Use command line RR if provided, otherwise default to 2
     risk_reward = args.rr if args.rr is not None else 3
-    trades = find_gg_reversal_pattern_trades(df_5m, bullish_ggs, bearish_ggs, risk_reward=risk_reward)
+    trades = find_gg_reversal_pattern_trades(oanda_df_ltf, oanda_bullish_ggs, oanda_bearish_ggs, risk_reward=risk_reward)
+
+    # full_results = analyze_trading_results(
+    #     trades, 
+    #     oanda_df_ltf, 
+    #     rr=args.rr, 
+    #     initial_balance=1000, 
+    #     stacking=1, 
+    #     use_trailing_sl=True,
+    #     respect_tp_when_sl_trailing=args.respect_tp if args.respect_tp is not None else False,
+    #     account_type='dynamic',
+    #     minimum_balance=1000,
+    #     max_backup=9000,
+    #     withdrawal_pct=20,
+    #     withdrawal_step=5000,
+    #     risk_percent=50,
+    #     equity_goal = None
+    # )
 
     full_results = analyze_trading_results(
         trades, 
-        df_5m, 
+        oanda_df_ltf, 
         rr=args.rr, 
         initial_balance=1000, 
         stacking=1, 
         use_trailing_sl=True,
         respect_tp_when_sl_trailing=args.respect_tp if args.respect_tp is not None else False,
         account_type='dynamic',
-        minimum_balance=1000,
-        max_backup=9000,
-        withdrawal_pct=20,
-        withdrawal_step=5000,
-        risk_percent=50,
-        equity_goal=None
+        minimum_balance=500,
+        max_backup=1000,
+        withdrawal_pct=0,
+        withdrawal_step=100,
+        risk_percent=1,
+        equity_goal = None
     )
 
     trades_df = full_results['trades_df']
@@ -635,7 +704,7 @@ def main():
 
     # trades_df = trades_df.sort_values()
     
-    excluded_columns = ['gg', 'type', 'rr']
+    excluded_columns = ['gg', 'type', 'rr', 'trail_sl_history']
     pd.set_option('display.max_rows', None)
     print(trades_df[[col for col in trades_df.columns if col not in excluded_columns]])
     pd.reset_option('display.max_rows')
@@ -669,10 +738,10 @@ def main():
     print(f"  Total Investment: ${results['total_investment']:.2f}")
     print(f"  Max Drawdown: ${results['max_drawdown']:.2f}")
     print(f"  Max Equity: ${results['max_equity']:.2f}")
-    print(f"  Consecutive Wins: {results['consecutive_wins']}")
-    print(f"  Consecutive Losses: {results['consecutive_losses']}")
     print(f"  Max Consecutive Wins: {results['max_consecutive_wins']}")
     print(f"  Max Consecutive Losses: {results['max_consecutive_losses']}")
+    print(f"  Total Equity: ${results['total_equity']:.2f}")
+    print(f"  Total Withdrawal: ${results['total_withdrawal']:.2f}")
     print(f"  Max Withdrawal: ${results['max_withdrawal']:.2f}")
     
 
@@ -685,7 +754,7 @@ def main():
     # )
 
     if args.chart:
-        create_chart_with_ggs_and_trades(df_5m, bullish_ggs, bearish_ggs, final_trades)
+        create_chart_with_ggs_and_trades(oanda_df_ltf, oanda_bullish_ggs, oanda_bearish_ggs, final_trades)
 
     #create_chart(df_5m, bullish_ggs, bearish_ggs)
 

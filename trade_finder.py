@@ -74,7 +74,7 @@ def detect_fvg(df, timeframe):
     
     return bullish_fvgs, bearish_fvgs
 
-def get_data(symbol, start_date, end_date):
+def get_yf_data_and_fvgs(symbol, start_date, end_date):
     """Get data from yfinance for both 1h and 5min timeframes"""
     # Get 1h data
     df_1h = yf.download(symbol, start=start_date, end=end_date, interval='1h')
