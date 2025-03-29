@@ -9,14 +9,11 @@ from helper import print_fvg_details
 import argparse
 
 from trade_finder import get_yf_data_and_fvgs, detect_fvg, find_fvg_intersections, find_gg_reversal_pattern_trades
-from get_oanda_data import get_oanda_data
+from get_oanda_data import get_oanda_data_all_types, get_oanda_data
 
+rr_jumpstep=1.5
 
-
-
-
-
-def calculate_trailing_sl(entry, sl, current_price, direction, strategy='r_based', high=None, low=None, rr_jumpstep=1):
+def calculate_trailing_sl(entry, initial_sl, sl, current_price, direction, strategy='r_behind', high=None, low=None, rr_jumpstep=rr_jumpstep):
     """
     Calculate the trailing stop loss level based on price movement.
     
@@ -33,7 +30,7 @@ def calculate_trailing_sl(entry, sl, current_price, direction, strategy='r_based
     Returns:
         float: New stop loss level
     """
-    initial_risk = abs(entry - sl)
+    initial_risk = abs(entry - initial_sl)
     if initial_risk == 0:
         return sl
         
@@ -58,6 +55,15 @@ def calculate_trailing_sl(entry, sl, current_price, direction, strategy='r_based
                 # New SL is (r_steps) * rr_jumpstep R below entry
                 return entry - (r_steps * rr_jumpstep * initial_risk)
             return sl
+    
+    if strategy == 'r_behind':
+        new_bullish_sl = current_price - rr_jumpstep * initial_risk
+        new_bearish_sl = current_price + rr_jumpstep * initial_risk
+        if direction == 'bullish' and new_bullish_sl > sl:
+            return new_bullish_sl
+        elif direction == 'bearish' and new_bearish_sl < sl:
+            return new_bearish_sl
+        return sl
             
     else:  # candle_based
         if high is None or low is None:
@@ -71,7 +77,7 @@ def calculate_trailing_sl(entry, sl, current_price, direction, strategy='r_based
             return new_sl if new_sl < sl else sl
         return sl
 
-def analyze_trade_exits(trades, df, rr=None, stacking=1, use_trailing_sl=False, respect_tp_when_sl_trailing=True, trailing_sl_strategy='r_based'):
+def analyze_trade_exits(trades, df, rr=None, stacking=1, use_trailing_sl=False, respect_tp_when_sl_trailing=True, trailing_sl_strategy='r_behind'):
     """
     Analyze trades to determine exit prices, times and results based on price action.
     
@@ -87,6 +93,8 @@ def analyze_trade_exits(trades, df, rr=None, stacking=1, use_trailing_sl=False, 
     Returns:
         dict: Updated trades dict with exit information
     """
+    
+    print("################# \n\n  Analyzing trade exits... \n\n ################")
     # Sort all trades by time
     all_trades = []
     for direction in ['bullish', 'bearish']:
@@ -147,6 +155,8 @@ def analyze_trade_exits(trades, df, rr=None, stacking=1, use_trailing_sl=False, 
         # Check each future candle
         for idx, row in future_data.iterrows():
             high, low = row['High'], row['Low']
+            high_bid, low_bid = row['High_bid'], row['Low_bid']
+            high_ask, low_ask = row['High_ask'], row['Low_ask']
             close = row['Close']
             open = row['Open']
 
@@ -175,8 +185,8 @@ def analyze_trade_exits(trades, df, rr=None, stacking=1, use_trailing_sl=False, 
 
             # Check for TP hit first if respect_tp_when_sl_trailing is True or trailing SL is not used
             if respect_tp_when_sl_trailing or not use_trailing_sl:
-                tp_hit = (direction == 'bullish' and candle_color == 'green' and high >= tp) or \
-                        (direction == 'bearish' and candle_color == 'red' and low <= tp)
+                tp_hit = (direction == 'bullish' and candle_color == 'green' and high_bid >= tp) or \
+                        (direction == 'bearish' and candle_color == 'red' and low_ask <= tp)
                 
                 if tp_hit:
                     exit_price = tp
@@ -190,7 +200,7 @@ def analyze_trade_exits(trades, df, rr=None, stacking=1, use_trailing_sl=False, 
             if use_trailing_sl:
                 if direction == 'bullish' and prev_candle_color == 'green' and prev_high > current_sl:
                     new_sl = calculate_trailing_sl(
-                        entry, current_sl, prev_close, direction,
+                        entry, initial_sl, current_sl, prev_close, direction,
                         strategy=trailing_sl_strategy,
                         high=prev_high, low=prev_low
                     )
@@ -202,7 +212,7 @@ def analyze_trade_exits(trades, df, rr=None, stacking=1, use_trailing_sl=False, 
                         trail_sl_history.append((current_rr, idx, new_sl))
                 elif direction == 'bearish' and prev_candle_color == 'red' and prev_low < current_sl:
                     new_sl = calculate_trailing_sl(
-                        entry, current_sl, prev_close, direction,
+                        entry, initial_sl, current_sl, prev_close, direction,
                         strategy=trailing_sl_strategy,
                         high=prev_high, low=prev_low
                     )
@@ -214,11 +224,11 @@ def analyze_trade_exits(trades, df, rr=None, stacking=1, use_trailing_sl=False, 
                         trail_sl_history.append((current_rr, idx, new_sl))
             
             # Check for SL hit
-            sl_hit = (direction == 'bullish' and low <= current_sl) or \
-                    (direction == 'bearish' and high >= current_sl)
+            sl_hit = (direction == 'bullish' and low_bid <= current_sl) or \
+                    (direction == 'bearish' and high_ask >= current_sl)
             
             if sl_hit:
-                exit_price = current_sl
+                exit_price = current_sl 
                 exit_type = 'TSL' if sl_has_trailed else 'SL'
                 exit_time = idx
                 
@@ -263,6 +273,10 @@ def analyze_trade_exits(trades, df, rr=None, stacking=1, use_trailing_sl=False, 
             
         # Add to filtered trades
         filtered_trades[direction].append(trade)
+
+        # Print progress after every 30 trades
+        if len(filtered_trades['bullish']) + len(filtered_trades['bearish']) % 30 == 0:
+            print(f"Analysed {len(filtered_trades['bullish']) + len(filtered_trades['bearish'])} trades...")
         
     return filtered_trades
 
@@ -351,8 +365,8 @@ def analyze_trade_metrics(trades, account_type='steady', initial_balance=1000, m
         
         # Calculate withdrawal if applicable
         withdrawal = 0
-        if balance_after >= withdrawal_step:
-            steps = int(balance_after / withdrawal_step)
+        if balance_after - initial_balance >= withdrawal_step:
+            steps = int((balance_after - initial_balance) / withdrawal_step)
             withdrawal_amount = steps * (withdrawal_pct/100 * withdrawal_step)
             
             # Only withdraw if it won't put balance below minimum
@@ -616,9 +630,9 @@ def main():
     symbol = "SPX500_USD"
     # symbol = "US30_USD"
 
-    HTF = "M15"
-    LTF = "M1"
-    days = 7
+    HTF = "H1"
+    LTF = "M5"
+    days = 30
 
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days)  # Reduced to 7 days due to 5min data limitations
@@ -628,20 +642,33 @@ def main():
     parser.add_argument('--rr', type=float, help='Risk/reward ratio for trades')
     parser.add_argument('--chart', action='store_true', help='Display chart visualization')
     parser.add_argument('--respect_tp', action='store_true', help='Respect TP when trailing SL is active')
-
+    parser.add_argument('--days', type=int, help='Number of days to analyze')
+    
     args = parser.parse_args()
     
     print(f"Fetching data for {symbol} from {start_date} to {end_date}")
     
+    days = args.days if args.days is not None else days
 
-
+    rr=2
+    initial_balance=10000
+    stacking=1
+    use_trailing_sl=True
+    respect_tp_when_sl_trailing=args.respect_tp if args.respect_tp is not None else False
+    account_type='dynamic'
+    minimum_balance=500
+    max_backup=1000
+    withdrawal_pct=5
+    withdrawal_step=1000
+    risk_percent=5
+    equity_goal = None
 
     # Get YF data
     # df_1h, df_5m, fvgs_1h, fvgs_5m = get_yf_data_and_fvgs(yf_symbol, start_date, end_date)
 
 
-    oanda_df_htf = get_oanda_data(symbol, HTF, str(days))
-    oanda_df_ltf = get_oanda_data(symbol, LTF, str(days))
+    oanda_df_htf = get_oanda_data_all_types(symbol, HTF, str(days))
+    oanda_df_ltf = get_oanda_data_all_types(symbol, LTF, str(days))
 
     oanda_fvgs_htf = detect_fvg(oanda_df_htf, HTF)
     oanda_fvgs_ltf = detect_fvg(oanda_df_ltf, LTF)
@@ -684,18 +711,18 @@ def main():
     full_results = analyze_trading_results(
         trades, 
         oanda_df_ltf, 
-        rr=args.rr, 
-        initial_balance=1000, 
-        stacking=1, 
-        use_trailing_sl=True,
-        respect_tp_when_sl_trailing=args.respect_tp if args.respect_tp is not None else False,
-        account_type='dynamic',
-        minimum_balance=500,
-        max_backup=1000,
-        withdrawal_pct=0,
-        withdrawal_step=100,
-        risk_percent=1,
-        equity_goal = None
+        rr=rr,
+        initial_balance=initial_balance,
+        stacking=stacking,
+        use_trailing_sl=use_trailing_sl,
+        respect_tp_when_sl_trailing=respect_tp_when_sl_trailing,
+        account_type=account_type,
+        minimum_balance=minimum_balance,
+        max_backup=max_backup,
+        withdrawal_pct=withdrawal_pct,
+        withdrawal_step=withdrawal_step,
+        risk_percent=risk_percent,
+        equity_goal = equity_goal
     )
 
     trades_df = full_results['trades_df']
@@ -706,7 +733,7 @@ def main():
     
     excluded_columns = ['gg', 'type', 'rr', 'trail_sl_history']
     pd.set_option('display.max_rows', None)
-    print(trades_df[[col for col in trades_df.columns if col not in excluded_columns]])
+    # print(trades_df[[col for col in trades_df.columns if col not in excluded_columns]])
     pd.reset_option('display.max_rows')
 
     # Export trades to CSV, excluding certain columns
@@ -715,6 +742,20 @@ def main():
         trades_df[output_columns].to_csv('trades.csv', index=False)
         print("\nTrades exported to trades.csv")
     
+    print("\nInput Parameters:")
+    print(f"  Initial Balance: ${initial_balance:.2f}")
+    print(f"  Risk/Reward Ratio: {rr}")
+    print(f"  Position Stacking: {stacking}")
+    print(f"  RR Jumpstep: {rr_jumpstep}")
+    print(f"  Trailing Stop Loss: {use_trailing_sl}")
+    print(f"  Respect Take Profit: {respect_tp_when_sl_trailing}")
+    print(f"  Account Type: {account_type}")
+    print(f"  Minimum Balance: ${minimum_balance:.2f}")
+    print(f"  Maximum Backup: ${max_backup:.2f}")
+    print(f"  Withdrawal Percentage: {withdrawal_pct}%")
+    print(f"  Withdrawal Step: ${withdrawal_step:.2f}")
+    print(f"  Risk Percentage: {risk_percent}%")
+    print(f"  Equity Goal: {equity_goal}")
 
     print("\nTrade Analysis Results:")
     print(f"  Total Trades: {results['total_trades']}")

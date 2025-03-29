@@ -93,7 +93,6 @@ def get_yf_data_and_fvgs(symbol, start_date, end_date):
     return df_1h, df_5m, fvgs_1h, fvgs_5m
 
 
-
 def find_fvg_intersections(fvgs_1h, fvgs_5m, check_active=False):
     """
     Find intersecting areas between 1h and 5m FVGs of the same type
@@ -193,6 +192,9 @@ def find_gg_reversal_pattern_trades(df, bullish_ggs, bearish_ggs, risk_reward=2)
             'high': df['High'].iloc[i],
             'low': df['Low'].iloc[i],
             'close': df['Close'].iloc[i],
+            'close_bid': df['Close_bid'].iloc[i] if 'Close_bid' in df.columns else df['Close'].iloc[i],
+            'close_ask': df['Close_ask'].iloc[i] if 'Close_ask' in df.columns else df['Close'].iloc[i],
+            'spread': df['Close_spread'].iloc[i] if 'Close_spread' in df.columns else 0,
             'time': df.index[i]
         }
         
@@ -222,10 +224,19 @@ def find_gg_reversal_pattern_trades(df, bullish_ggs, bearish_ggs, risk_reward=2)
                 current_candle['close'] < gg['low'] and
                 prev_candle['high'] < gg['low']):
                 
-                entry = current_candle['close']
+                # Use bid price for selling
+                entry = round(current_candle['close_bid'], 1)
                 sl = min(candle_based_high, gg['high'])
-                risk = sl - entry
-                tp = entry - (risk * risk_reward)
+                
+                # Check if SL is too close to entry (within the spread)
+                if sl - entry <= current_candle['spread']:
+                    # Adjust SL by 1 spread
+                    sl += current_candle['spread'] * 1.0
+                
+                # Round the stop loss to 1 decimal place
+                sl = round(sl, 1)
+                risk = round(sl - entry, 1)
+                tp = round(entry - (risk * risk_reward), 1)
                 
                 trades['bearish'].append({
                     'time': trade_time,
@@ -234,8 +245,15 @@ def find_gg_reversal_pattern_trades(df, bullish_ggs, bearish_ggs, risk_reward=2)
                     'tp': tp,
                     'trailing_sl': None,
                     'type': 'pattern1',
-                    'gg': gg
+                    'gg': gg,
+                    'risk_pips': risk,
+                    'spread': current_candle['spread'],
+                    'direction': 'bearish'
                 })
+
+                # Print progress after every 30 trades
+                if (len(trades['bearish']) + len(trades['bullish'])) % 30 == 0:
+                    print(f"Processed {len(trades['bearish']) + len(trades['bullish'])} trades...")
                 
             # Pattern 2: Inverted Gap kill reversal
             elif (current_candle['close'] < current_candle['open'] and  # Red candle
@@ -245,10 +263,19 @@ def find_gg_reversal_pattern_trades(df, bullish_ggs, bearish_ggs, risk_reward=2)
                 prev_candle['close'] > gg['high'] and
                 prev_candle['close'] > prev_candle['open']):  # Previous green
                 
-                entry = current_candle['close']
+                # Use bid price for selling
+                entry = round(current_candle['close_bid'], 1)
                 sl = min(candle_based_high, gg['high'])
-                risk = sl - entry
-                tp = entry - (risk * risk_reward)
+                
+                # Check if SL is too close to entry (within the spread)
+                if sl - entry <= current_candle['spread']:
+                    # Adjust SL by 1 spread
+                    sl += current_candle['spread'] * 1.0
+                
+                # Round the stop loss to 1 decimal place
+                sl = round(sl, 1)
+                risk = round(sl - entry, 1)
+                tp = round(entry - (risk * risk_reward), 1)
                 
                 trades['bearish'].append({
                     'time': trade_time,
@@ -257,8 +284,15 @@ def find_gg_reversal_pattern_trades(df, bullish_ggs, bearish_ggs, risk_reward=2)
                     'tp': tp,
                     'trailing_sl': None,
                     'type': 'pattern2',
-                    'gg': gg
+                    'gg': gg,
+                    'risk_pips': risk,
+                    'spread': current_candle['spread'],
+                    'direction': 'bearish'
                 })
+
+                # Print progress after every 30 trades
+                if (len(trades['bearish']) + len(trades['bullish'])) % 30 == 0:
+                    print(f"Processed {len(trades['bearish']) + len(trades['bullish'])} trades...")
                 
             # Pattern 3: previous green candle closing inside GG and current red candle reversing.
             elif (current_candle['close'] < current_candle['open'] and  # Red candle
@@ -268,10 +302,19 @@ def find_gg_reversal_pattern_trades(df, bullish_ggs, bearish_ggs, risk_reward=2)
                 gg['low'] < prev_candle['close'] < gg['high'] and
                 prev_candle['close'] > prev_candle['open']):  # Previous green
                 
-                entry = current_candle['close']
+                # Use bid price for selling
+                entry = round(current_candle['close_bid'], 1)
                 sl = min(candle_based_high, gg['high'])
-                risk = sl - entry
-                tp = entry - (risk * risk_reward)
+                
+                # Check if SL is too close to entry (within the spread)
+                if sl - entry <= current_candle['spread']:
+                    # Adjust SL by 1 spread
+                    sl += current_candle['spread'] * 1.0
+                
+                # Round the stop loss to 1 decimal place
+                sl = round(sl, 1)
+                risk = round(sl - entry, 1)
+                tp = round(entry - (risk * risk_reward), 1)
                 
                 trades['bearish'].append({
                     'time': trade_time,
@@ -280,8 +323,15 @@ def find_gg_reversal_pattern_trades(df, bullish_ggs, bearish_ggs, risk_reward=2)
                     'tp': tp,
                     'trailing_sl': None,
                     'type': 'pattern3',
-                    'gg': gg
+                    'gg': gg,
+                    'risk_pips': risk,
+                    'spread': current_candle['spread'],
+                    'direction': 'bearish'
                 })
+
+                # Print progress after every 30 trades
+                if (len(trades['bearish']) + len(trades['bullish'])) % 30 == 0:
+                    print(f"Processed {len(trades['bearish']) + len(trades['bullish'])} trades...")
 
         # Check bullish patterns against bullish GGs  
         for gg in bullish_ggs:
@@ -295,10 +345,19 @@ def find_gg_reversal_pattern_trades(df, bullish_ggs, bearish_ggs, risk_reward=2)
                 current_candle['close'] > gg['high'] and
                 prev_candle['low'] > gg['high']):
                 
-                entry = current_candle['close']
+                # Use ask price for buying
+                entry = round(current_candle['close_ask'], 1)
                 sl = max(candle_based_low, gg['low'])
-                risk = entry - sl
-                tp = entry + (risk * risk_reward)
+                
+                # Check if SL is too close to entry (within the spread)
+                if entry - sl <= current_candle['spread']:
+                    # Adjust SL by 1 spread
+                    sl -= current_candle['spread'] * 1.0
+                
+                # Round the stop loss to 1 decimal place
+                sl = round(sl, 1)
+                risk = round(entry - sl, 1)
+                tp = round(entry + (risk * risk_reward), 1)
                 
                 trades['bullish'].append({
                     'time': trade_time,
@@ -307,8 +366,15 @@ def find_gg_reversal_pattern_trades(df, bullish_ggs, bearish_ggs, risk_reward=2)
                     'tp': tp,
                     'trailing_sl': None,
                     'type': 'pattern1',
-                    'gg': gg
+                    'gg': gg,
+                    'risk_pips': risk,
+                    'spread': current_candle['spread'],
+                    'direction': 'bullish'
                 })
+
+                # Print progress after every 30 trades
+                if (len(trades['bearish']) + len(trades['bullish'])) % 30 == 0:
+                    print(f"Processed {len(trades['bearish']) + len(trades['bullish'])} trades...")
                 
             # Pattern 2: Inverted Gap kill reversal
             elif (current_candle['close'] > current_candle['open'] and  # Green candle
@@ -318,10 +384,19 @@ def find_gg_reversal_pattern_trades(df, bullish_ggs, bearish_ggs, risk_reward=2)
                 prev_candle['close'] < gg['low'] and
                 prev_candle['close'] < prev_candle['open']):  # Previous red
                 
-                entry = current_candle['close']
+                # Use ask price for buying
+                entry = round(current_candle['close_ask'], 1)
                 sl = max(candle_based_low, gg['low'])
-                risk = entry - sl
-                tp = entry + (risk * risk_reward)
+                
+                # Check if SL is too close to entry (within the spread)
+                if entry - sl <= current_candle['spread']:
+                    # Adjust SL by 1 spread
+                    sl -= current_candle['spread'] * 1.0
+                
+                # Round the stop loss to 1 decimal place
+                sl = round(sl, 1)
+                risk = round(entry - sl, 1)
+                tp = round(entry + (risk * risk_reward), 1)
                 
                 trades['bullish'].append({
                     'time': trade_time,
@@ -330,8 +405,15 @@ def find_gg_reversal_pattern_trades(df, bullish_ggs, bearish_ggs, risk_reward=2)
                     'tp': tp,
                     'trailing_sl': None,
                     'type': 'pattern2',
-                    'gg': gg
+                    'gg': gg,
+                    'risk_pips': risk,
+                    'spread': current_candle['spread'],
+                    'direction': 'bullish'
                 })
+
+                # Print progress after every 30 trades
+                if (len(trades['bearish']) + len(trades['bullish'])) % 30 == 0:
+                    print(f"Processed {len(trades['bearish']) + len(trades['bullish'])} trades...")
                 
             # Pattern 3: previous red candle closing inside GG and current green candle reversing.
             elif (current_candle['close'] > current_candle['open'] and  # Green candle
@@ -341,10 +423,19 @@ def find_gg_reversal_pattern_trades(df, bullish_ggs, bearish_ggs, risk_reward=2)
                 gg['low'] < prev_candle['close'] < gg['high'] and
                 prev_candle['close'] < prev_candle['open']):  # Previous red
                 
-                entry = current_candle['close']
+                # Use ask price for buying
+                entry = round(current_candle['close_ask'], 1)
                 sl = max(candle_based_low, gg['low'])
-                risk = entry - sl
-                tp = entry + (risk * risk_reward)
+                
+                # Check if SL is too close to entry (within the spread)
+                if entry - sl <= current_candle['spread']:
+                    # Adjust SL by 1 spread
+                    sl -= current_candle['spread'] * 1.0
+                
+                # Round the stop loss to 1 decimal place
+                sl = round(sl, 1)
+                risk = round(entry - sl, 1)
+                tp = round(entry + (risk * risk_reward), 1)
                 
                 trades['bullish'].append({
                     'time': trade_time,
@@ -353,7 +444,14 @@ def find_gg_reversal_pattern_trades(df, bullish_ggs, bearish_ggs, risk_reward=2)
                     'tp': tp,
                     'trailing_sl': None,
                     'type': 'pattern3',
-                    'gg': gg
+                    'gg': gg,
+                    'risk_pips': risk,
+                    'spread': current_candle['spread'],
+                    'direction': 'bullish'
                 })
+
+                # Print progress after every 30 trades
+                if (len(trades['bearish']) + len(trades['bullish'])) % 30 == 0:
+                    print(f"Processed {len(trades['bearish']) + len(trades['bullish'])} trades...")
                 
     return trades
